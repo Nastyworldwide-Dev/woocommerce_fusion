@@ -230,6 +230,10 @@ ignore_links_on_delete = [
 
 fixtures = [
 	{
+		"dt": "Workspace",
+		"filters": {"module": "WooCommerce"},
+	},
+	{
 		"dt": "Custom Field",
 		"filters": [
 			[
