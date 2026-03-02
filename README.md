@@ -12,6 +12,12 @@
 ### WooCommerce Fusion
 
 ![CI workflow](https://github.com/dvdl16/woocommerce_fusion/actions/workflows/ci.yml/badge.svg?branch=version-15)
+
+## Changelog
+
+### v1.17.0 (2026-03-02)
+- feat: Add WooCommerce Fusion workspace for easy navigation to Orders, Products, Server config, and Request Logs
+- fix: Prevent duplicate customer creation during order sync by matching on existing Contact email or phone
 [![codecov](https://codecov.io/gh/dvdl16/woocommerce_fusion/graph/badge.svg?token=A5OR5QIOUX)](https://codecov.io/gh/dvdl16/woocommerce_fusion)
 
 WooCommerce Fusion
