@@ -15,6 +15,9 @@
 
 ## Changelog
 
+### v1.17.4 (2026-03-02)
+- fix: Add customer_primary_contact fallback for contacts without Dynamic Link, covering manually created contacts linked to customers in ERPNext
+
 ### v1.17.3 (2026-03-02)
 - fix: Preserve existing woocommerce_identifier when guest order matches an existing customer via email/phone, preventing future logged-in order lookups from breaking
 
