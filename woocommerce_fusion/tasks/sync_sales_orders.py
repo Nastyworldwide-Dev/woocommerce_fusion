@@ -571,6 +571,17 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			"Customer", {"woocommerce_identifier": customer_identifier}, "name"
 		)
 
+		# Fall back to matching by email or phone via Contact
+		if not existing_customer and not is_guest:
+			phone = raw_billing_data.get("phone", "").strip()
+			contact = find_existing_contact(email, phone)
+			if contact:
+				existing_customer = frappe.db.get_value(
+					"Dynamic Link",
+					{"parenttype": "Contact", "parent": contact.name, "link_doctype": "Customer"},
+					"link_name",
+				)
+
 		if not existing_customer:
 			# Create Customer
 			customer = frappe.new_doc("Customer")
