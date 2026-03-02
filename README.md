@@ -15,6 +15,9 @@
 
 ## Changelog
 
+### v1.17.3 (2026-03-02)
+- fix: Preserve existing woocommerce_identifier when guest order matches an existing customer via email/phone, preventing future logged-in order lookups from breaking
+
 ### v1.17.2 (2026-03-02)
 - fix: Extend email/phone customer fallback to guest orders, preventing duplicate customers for repeat guest checkouts
 
