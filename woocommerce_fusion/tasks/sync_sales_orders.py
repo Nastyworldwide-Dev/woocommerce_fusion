@@ -575,6 +575,7 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 		if not existing_customer:
 			phone = raw_billing_data.get("phone", "").strip()
 			if email:
+				# 1a. Try via Dynamic Link (Contact.links child table)
 				result = frappe.db.sql(
 					"""
 					SELECT dl.link_name
@@ -589,7 +590,19 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				)
 				if result:
 					existing_customer = result[0][0]
+
+				# 1b. Try via Customer.customer_primary_contact (no Dynamic Link needed)
+				if not existing_customer:
+					contact_name = frappe.db.get_value(
+						"Contact Email", {"email_id": email}, "parent"
+					)
+					if contact_name:
+						existing_customer = frappe.db.get_value(
+							"Customer", {"customer_primary_contact": contact_name}, "name"
+						)
+
 			if not existing_customer and phone:
+				# 2a. Try via Dynamic Link
 				result = frappe.db.sql(
 					"""
 					SELECT dl.link_name
@@ -604,6 +617,16 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				)
 				if result:
 					existing_customer = result[0][0]
+
+				# 2b. Try via Customer.customer_primary_contact
+				if not existing_customer:
+					contact_name = frappe.db.get_value(
+						"Contact Phone", {"phone": phone}, "parent"
+					)
+					if contact_name:
+						existing_customer = frappe.db.get_value(
+							"Customer", {"customer_primary_contact": contact_name}, "name"
+						)
 
 		if not existing_customer:
 			# Create Customer
