@@ -572,7 +572,7 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 		)
 
 		# Fall back to matching by email or phone via Contact → Customer link
-		if not existing_customer and not is_guest:
+		if not existing_customer:
 			phone = raw_billing_data.get("phone", "").strip()
 			if email:
 				result = frappe.db.sql(
