@@ -15,6 +15,9 @@
 
 ## Changelog
 
+### v1.17.2 (2026-03-02)
+- fix: Extend email/phone customer fallback to guest orders, preventing duplicate customers for repeat guest checkouts
+
 ### v1.17.1 (2026-03-02)
 - fix: Strip trailing slash from WooCommerce server URL before building order link
 - fix: Use direct SQL JOIN to match customer by email or phone across all contacts, preventing duplicate customer creation
