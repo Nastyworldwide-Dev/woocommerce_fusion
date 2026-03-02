@@ -616,7 +616,11 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			customer = frappe.get_doc("Customer", existing_customer)
 
 		customer.customer_name = company_name if company_name else individual_name
-		customer.woocommerce_identifier = customer_identifier
+		# For guest orders, don't overwrite an existing woocommerce_identifier — it may have been
+		# set by a previous logged-in order and overwriting it with "Guest-{id}" would break
+		# future lookups for that customer.
+		if not is_guest or not customer.get("woocommerce_identifier"):
+			customer.woocommerce_identifier = customer_identifier
 
 		# Check if vat_id exists in raw_billing_data and is a valid string
 		vat_id = raw_billing_data.get("vat_id")
