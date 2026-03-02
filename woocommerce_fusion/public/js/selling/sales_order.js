@@ -11,7 +11,7 @@ frappe.ui.form.on("Sales Order", {
             "woocommerce_server_url",
             (values) => {
               window.open(
-                values.woocommerce_server_url +
+                values.woocommerce_server_url.replace(/\/+$/, "") +
                   `/wp-admin/post.php?post=${frm.doc.woocommerce_id}&action=edit`,
                 "_blank",
               );
