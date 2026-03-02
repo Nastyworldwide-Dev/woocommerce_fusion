@@ -15,6 +15,10 @@
 
 ## Changelog
 
+### v1.17.1 (2026-03-02)
+- fix: Strip trailing slash from WooCommerce server URL before building order link
+- fix: Use direct SQL JOIN to match customer by email or phone across all contacts, preventing duplicate customer creation
+
 ### v1.17.0 (2026-03-02)
 - feat: Add WooCommerce Fusion workspace for easy navigation to Orders, Products, Server config, and Request Logs
 - fix: Prevent duplicate customer creation during order sync by matching on existing Contact email or phone
