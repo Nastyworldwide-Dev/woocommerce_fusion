@@ -1,31 +1,59 @@
 frappe.ui.form.on("Item", {
   refresh: function (frm) {
-    // Add a custom button to sync Item Stock with WooCommerce
-    frm.add_custom_button(
-      __("Sync this Item's Stock Levels to WooCommerce"),
-      function () {
-        frm.trigger("sync_item_stock");
-      },
-      __("Actions"),
+    // Only show WooCommerce buttons if Item has enabled WooCommerce server links
+    let enabled_servers = (frm.doc.woocommerce_servers || []).filter(
+      (r) => r.enabled && r.woocommerce_server,
     );
+    if (!enabled_servers.length) return;
 
-    // Add a custom button to sync Item Price with WooCommerce
-    frm.add_custom_button(
-      __("Sync this Item's Price to WooCommerce"),
-      function () {
-        frm.trigger("sync_item_price");
-      },
-      __("Actions"),
-    );
+    let server_names = enabled_servers.map((r) => r.woocommerce_server);
 
-    // Add a custom button to sync Item with WooCommerce
-    frm.add_custom_button(
-      __("Sync this Item with WooCommerce"),
-      function () {
-        frm.trigger("sync_item");
+    frappe.call({
+      method: "frappe.client.get_list",
+      args: {
+        doctype: "WooCommerce Server",
+        filters: { name: ["in", server_names], enable_sync: 1 },
+        fields: [
+          "name",
+          "enable_price_list_sync",
+          "enable_stock_level_synchronisation",
+        ],
       },
-      __("Actions"),
-    );
+      callback: function (r) {
+        if (!r.message || !r.message.length) return;
+
+        // Always show "Sync Item" if any server has sync enabled
+        frm.add_custom_button(
+          __("Sync this Item with WooCommerce"),
+          function () {
+            frm.trigger("sync_item");
+          },
+          __("Actions"),
+        );
+
+        // Only show stock button if at least one server has stock sync enabled
+        if (r.message.some((s) => s.enable_stock_level_synchronisation)) {
+          frm.add_custom_button(
+            __("Sync this Item's Stock Levels to WooCommerce"),
+            function () {
+              frm.trigger("sync_item_stock");
+            },
+            __("Actions"),
+          );
+        }
+
+        // Only show price button if at least one server has price list sync enabled
+        if (r.message.some((s) => s.enable_price_list_sync)) {
+          frm.add_custom_button(
+            __("Sync this Item's Price to WooCommerce"),
+            function () {
+              frm.trigger("sync_item_price");
+            },
+            __("Actions"),
+          );
+        }
+      },
+    });
   },
 
   sync_item_stock: function (frm) {
