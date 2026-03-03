@@ -115,17 +115,8 @@ def update_stock_levels_on_woocommerce_site(item_code: str):
 				}
 
 				try:
-					parent_item_id = item.variant_of
-					if parent_item_id:
-						parent_item = frappe.get_doc("Item", parent_item_id)
-						# Get the parent item's woocommerce_id
-						for parent_wc_site in parent_item.woocommerce_servers:
-							if parent_wc_site.woocommerce_server == woocommerce_server:
-								parent_woocommerce_id = parent_wc_site.woocommerce_id
-								break
-						if not parent_woocommerce_id:
-							continue
-						endpoint = f"products/{parent_woocommerce_id}/variations/{woocommerce_id}"
+					if wc_site.woocommerce_parent_id:
+						endpoint = f"products/{wc_site.woocommerce_parent_id}/variations/{woocommerce_id}"
 					else:
 						endpoint = f"products/{woocommerce_id}"
 					response = wc_api.put(endpoint=endpoint, data=data_to_post)

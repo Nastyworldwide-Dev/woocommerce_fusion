@@ -368,6 +368,7 @@ class SynchroniseItem(SynchroniseWooCommerce):
 			# Reload ERPNext Item
 			item.item.reload()
 			item.item_woocommerce_server.woocommerce_id = wc_product.woocommerce_id
+			item.item_woocommerce_server.woocommerce_parent_id = wc_product.parent_id if item.item.variant_of else None
 			item.item.flags.created_by_sync = True
 			item.item.save()
 
@@ -415,6 +416,7 @@ class SynchroniseItem(SynchroniseWooCommerce):
 		row = item.append("woocommerce_servers")
 		row.woocommerce_id = wc_product.woocommerce_id
 		row.woocommerce_server = wc_server.name
+		row.woocommerce_parent_id = wc_product.parent_id if wc_product.type == "variation" else None
 		item.flags.ignore_mandatory = True
 		item.flags.created_by_sync = True
 
