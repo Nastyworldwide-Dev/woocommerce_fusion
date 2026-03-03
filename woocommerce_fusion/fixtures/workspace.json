@@ -16,7 +16,7 @@
 		"sequence_id": 10.0,
 		"restrict_to_domain": "",
 		"docstatus": 0,
-		"modified": "2025-01-01 00:00:00",
+		"modified": "2026-03-03 00:00:00",
 
 		"content": "[{\"id\":\"hd01\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>WooCommerce Fusion</b></span>\",\"col\":12}},{\"id\":\"sp01\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"sh01\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"WooCommerce Server\",\"col\":3}},{\"id\":\"sh02\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"WooCommerce Order\",\"col\":3}},{\"id\":\"sh03\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"WooCommerce Product\",\"col\":3}},{\"id\":\"sh04\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"WooCommerce Request Log\",\"col\":3}},{\"id\":\"sp02\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"cd01\",\"type\":\"card\",\"data\":{\"card_name\":\"Configuration\",\"col\":4}},{\"id\":\"cd02\",\"type\":\"card\",\"data\":{\"card_name\":\"Transactions\",\"col\":4}},{\"id\":\"cd03\",\"type\":\"card\",\"data\":{\"card_name\":\"Logs\",\"col\":4}}]",
 
