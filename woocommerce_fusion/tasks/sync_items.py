@@ -31,6 +31,14 @@ def run_item_sync_from_hook(doc, method):
 		and not doc.flags.get("created_by_sync", None)
 		and len(doc.woocommerce_servers) > 0
 	):
+		# Skip item sync if all linked servers have sync_only_stock enabled
+		if all(
+			frappe.db.get_value("WooCommerce Server", wc.woocommerce_server, "sync_only_stock")
+			for wc in doc.woocommerce_servers
+			if wc.woocommerce_server
+		):
+			return
+
 		frappe.msgprint(
 			_("Background sync to WooCommerce triggered for {0} {1}").format(frappe.bold(doc.name), method),
 			indicator="blue",
@@ -258,6 +266,11 @@ class SynchroniseItem(SynchroniseWooCommerce):
 		"""
 		Update the ERPNext Item with fields from it's corresponding WooCommerce Product
 		"""
+		wc_server = frappe.get_cached_doc("WooCommerce Server", woocommerce_product.woocommerce_server)
+		if wc_server.sync_only_stock:
+			self.set_sync_hash()
+			return
+
 		item_dirty = False
 		if item.item.item_name != woocommerce_product.woocommerce_name:
 			item.item.item_name = woocommerce_product.woocommerce_name
@@ -265,7 +278,6 @@ class SynchroniseItem(SynchroniseWooCommerce):
 
 		fields_updated, item.item = self.set_item_fields(item=item.item)
 
-		wc_server = frappe.get_cached_doc("WooCommerce Server", woocommerce_product.woocommerce_server)
 		if wc_server.enable_image_sync:
 			wc_product_images = json.loads(woocommerce_product.images)
 			if len(wc_product_images) > 0:
@@ -283,6 +295,11 @@ class SynchroniseItem(SynchroniseWooCommerce):
 		"""
 		Update the WooCommerce Product with fields from it's corresponding ERPNext Item
 		"""
+		wc_server = frappe.get_cached_doc("WooCommerce Server", wc_product.woocommerce_server)
+		if wc_server.sync_only_stock:
+			self.set_sync_hash()
+			return
+
 		wc_product_dirty = False
 
 		# Update properties
