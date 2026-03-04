@@ -194,6 +194,9 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			# create missing order in WooCommerce
 			pass
 		elif self.woocommerce_order and not self.sales_order:
+			# Skip creation for cancelled, refunded, failed, or trashed WooCommerce orders
+			if self.woocommerce_order.status in ("cancelled", "refunded", "failed", "trash"):
+				return
 			# create missing order in ERPNext
 			self.create_sales_order(self.woocommerce_order)
 		elif self.sales_order and self.woocommerce_order:
