@@ -121,7 +121,10 @@ doc_events = {
 		"on_cancel": "woocommerce_fusion.tasks.stock_update.update_stock_levels_for_woocommerce_item",
 	},
 	"Delivery Note": {
-		"on_submit": "woocommerce_fusion.tasks.stock_update.update_stock_levels_for_woocommerce_item",
+		"on_submit": [
+			"woocommerce_fusion.tasks.stock_update.update_stock_levels_for_woocommerce_item",
+			"woocommerce_fusion.tasks.sync_delivery_notes.auto_create_sales_invoice_on_submit",
+		],
 		"on_cancel": "woocommerce_fusion.tasks.stock_update.update_stock_levels_for_woocommerce_item",
 	},
 	"Item Price": {
