@@ -19,20 +19,15 @@ WC_ORDER_DELIMITER = "~"
 
 WC_ORDER_STATUS_MAPPING = {
 	"Pending Payment": "pending",
-	"On hold": "on-hold",
-	"Failed": "failed",
-	"Cancelled": "cancelled",
 	"Processing": "processing",
+	"On Hold": "on-hold",
+	"Completed": "completed",
+	"Cancelled": "cancelled",
 	"Refunded": "refunded",
-	"Shipped": "completed",
-	"Ready for Pickup": "ready-pickup",
-	"Picked up": "pickup",
-	"Delivered": "delivered",
-	"Processing LP": "processing-lp",
+	"Failed": "failed",
 	"Draft": "checkout-draft",
-	"Quote Sent": "gplsquote-req",
+	"Primary Order Accepted": "wfocu-pri-order",
 	"Trash": "trash",
-	"Partially Shipped": "partial-shipped",
 }
 WC_ORDER_STATUS_MAPPING_REVERSE = {v: k for k, v in WC_ORDER_STATUS_MAPPING.items()}
 
