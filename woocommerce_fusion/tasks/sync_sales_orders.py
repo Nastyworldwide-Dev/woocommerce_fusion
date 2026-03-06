@@ -256,9 +256,150 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				if self.create_and_link_payment_entry(woocommerce_order, sales_order):
 					so_dirty = True
 
+			# Update line items from WooCommerce if changed
+			if self.update_sales_order_items(woocommerce_order, sales_order):
+				so_dirty = True
+
 			if so_dirty:
 				sales_order.flags.created_by_sync = True
 				sales_order.save()
+
+	def resolve_wc_line_item(self, wc_line_item: dict, wc_server) -> dict:
+		"""
+		Resolve a WooCommerce line item to an ERPNext item code and rate.
+		"""
+		woocomm_item_id = wc_line_item.get("variation_id") or wc_line_item.get("product_id")
+
+		if woocomm_item_id == 0:
+			found_item = create_placeholder_item(self.sales_order)
+		else:
+			iws = frappe.qb.DocType("Item WooCommerce Server")
+			itm = frappe.qb.DocType("Item")
+			item_codes = (
+				frappe.qb.from_(iws)
+				.join(itm)
+				.on(iws.parent == itm.name)
+				.where(
+					(iws.woocommerce_id == cstr(woocomm_item_id))
+					& (iws.woocommerce_server == wc_server.name)
+					& (itm.disabled == 0)
+				)
+				.select(iws.parent)
+				.limit(1)
+			).run(as_dict=True)
+
+			found_item = frappe.get_doc("Item", item_codes[0].parent) if item_codes else None
+
+		if not found_item:
+			return None
+
+		rate = wc_line_item.get("price")
+		if wc_server.enable_tax_lines_sync and not wc_server.use_actual_tax_type:
+			tax_template = frappe.get_cached_doc(
+				"Sales Taxes and Charges Template",
+				wc_server.sales_taxes_and_charges_template,
+			)
+			if tax_template.taxes[0].included_in_print_rate:
+				rate = get_tax_inc_price_for_woocommerce_line_item(wc_line_item)
+
+		return {
+			"item_code": found_item.name,
+			"item_name": found_item.item_name,
+			"qty": wc_line_item.get("quantity"),
+			"rate": rate,
+			"discount_percentage": 100 if wc_line_item.get("price") == 0 else 0,
+		}
+
+	def update_sales_order_items(self, woocommerce_order: WooCommerceOrder, sales_order: SalesOrder) -> bool:
+		"""
+		Update Sales Order line items from WooCommerce Order.
+		For draft SOs, items are modified directly.
+		For submitted SOs, uses update_child_qty_rate (works only if no DN/SI exists).
+		Returns True if items were changed.
+		"""
+		wc_server = frappe.get_cached_doc("WooCommerce Server", sales_order.woocommerce_server)
+		wc_line_items = json.loads(woocommerce_order.line_items)
+
+		# Resolve WooCommerce line items to ERPNext items
+		self.create_missing_items(woocommerce_order, wc_line_items, woocommerce_order.woocommerce_server)
+		wc_resolved = []
+		for wc_item in wc_line_items:
+			resolved = self.resolve_wc_line_item(wc_item, wc_server)
+			if resolved:
+				wc_resolved.append(resolved)
+
+		# Compare with existing SO items
+		so_items = sales_order.items
+		items_changed = False
+
+		if len(wc_resolved) != len(so_items):
+			items_changed = True
+		else:
+			for i, resolved in enumerate(wc_resolved):
+				so_item = so_items[i]
+				if (
+					so_item.item_code != resolved["item_code"]
+					or so_item.qty != resolved["qty"]
+					or so_item.rate != float(resolved["rate"])
+				):
+					items_changed = True
+					break
+
+		if not items_changed:
+			return False
+
+		# Check if SO has Delivery Notes or Sales Invoices — if so, skip item update
+		if sales_order.docstatus == 1:
+			if sales_order.per_delivered > 0 or sales_order.per_billed > 0:
+				frappe.log_error(
+					"WooCommerce Sync",
+					f"Cannot update items on Sales Order {sales_order.name}: "
+					f"Delivery Note or Sales Invoice already exists.",
+				)
+				return False
+
+		if sales_order.docstatus == 0:
+			# Draft SO — replace items directly
+			sales_order.items = []
+			for resolved in wc_resolved:
+				sales_order.append("items", {
+					"item_code": resolved["item_code"],
+					"item_name": resolved["item_name"],
+					"description": resolved["item_name"],
+					"delivery_date": sales_order.delivery_date,
+					"qty": resolved["qty"],
+					"rate": resolved["rate"],
+					"warehouse": wc_server.warehouse,
+					"discount_percentage": resolved["discount_percentage"],
+				})
+			return True
+
+		elif sales_order.docstatus == 1:
+			# Submitted SO — use update_child_qty_rate
+			from erpnext.controllers.accounts_controller import update_child_qty_rate
+
+			# Build the items list for update_child_qty_rate
+			trans_items = []
+			for i, resolved in enumerate(wc_resolved):
+				item_row = {
+					"item_code": resolved["item_code"],
+					"qty": resolved["qty"],
+					"rate": resolved["rate"],
+				}
+				# Map to existing row if possible
+				if i < len(so_items):
+					item_row["docname"] = so_items[i].name
+				trans_items.append(item_row)
+
+			update_child_qty_rate(
+				parent_doctype="Sales Order",
+				trans_items=json.dumps(trans_items),
+				parent_doctype_name=sales_order.name,
+			)
+			sales_order.reload()
+			return True
+
+		return False
 
 	def create_and_link_payment_entry(self, wc_order: WooCommerceOrder, sales_order: SalesOrder) -> bool:
 		"""
