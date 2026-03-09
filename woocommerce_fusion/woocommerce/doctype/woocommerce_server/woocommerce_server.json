@@ -68,6 +68,7 @@
   "tax_account_for_order_fee_lines",
   "tab_delivery_notes",
   "section_dn_defaults",
+  "auto_create_delivery_note",
   "auto_create_sales_invoice",
   "tab_items",
   "item_section",
@@ -368,6 +369,14 @@
   {
    "default": "0",
    "depends_on": "eval: doc.submit_sales_orders",
+   "description": "Automatically create and submit a Delivery Note when a WooCommerce Sales Order is submitted",
+   "fieldname": "auto_create_delivery_note",
+   "fieldtype": "Check",
+   "label": "Auto Create Delivery Note on Sales Order Submit"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval: doc.submit_sales_orders",
    "description": "Automatically create and submit a Sales Invoice when a Delivery Note is submitted for a WooCommerce Sales Order",
    "fieldname": "auto_create_sales_invoice",
    "fieldtype": "Check",
@@ -649,7 +658,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-06 12:00:00.000000",
+ "modified": "2026-03-09 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "WooCommerce",
  "name": "WooCommerce Server",

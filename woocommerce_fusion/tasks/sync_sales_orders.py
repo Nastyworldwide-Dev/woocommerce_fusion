@@ -673,6 +673,21 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 		self.create_and_link_payment_entry(wc_order, new_sales_order)
 		new_sales_order.save()
 
+		# Auto-create Delivery Note if enabled
+		if wc_server.submit_sales_orders and wc_server.auto_create_delivery_note:
+			self.create_delivery_note(new_sales_order)
+
+	def create_delivery_note(self, sales_order: SalesOrder) -> None:
+		"""
+		Create a draft Delivery Note from a submitted Sales Order.
+		"""
+		from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note
+
+		dn = make_delivery_note(sales_order.name)
+		dn.flags.ignore_mandatory = True
+		dn.flags.created_by_sync = True
+		dn.insert()
+
 	def create_or_link_customer_and_address(self, wc_order: WooCommerceOrder) -> str:
 		"""
 		Create or update Customer and Address records, with special handling for guest orders using order ID.
