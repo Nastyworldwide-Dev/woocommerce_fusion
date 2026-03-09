@@ -469,15 +469,20 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 						reference_name = si_item_details[0].parent
 						total_amount = sales_order.grand_total
 
+				# Strip time component from date_paid for exchange rate lookups
+				posting_date = (wc_order.date_paid or sales_order.transaction_date)
+				if posting_date and "T" in str(posting_date):
+					posting_date = str(posting_date).split("T")[0]
+
 				# Create Payment Entry
 				payment_entry_dict = {
 					"company": company,
 					"payment_type": "Receive",
 					"reference_no": payment_reference_no or wc_order.payment_method_title,
-					"reference_date": wc_order.date_paid or sales_order.transaction_date,
+					"reference_date": posting_date,
 					"party_type": "Customer",
 					"party": sales_order.customer,
-					"posting_date": wc_order.date_paid or sales_order.transaction_date,
+					"posting_date": posting_date,
 					"paid_amount": float(wc_order.total),
 					"received_amount": float(wc_order.total),
 					"bank_account": company_bank_account,
@@ -485,6 +490,12 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				}
 				payment_entry = frappe.new_doc("Payment Entry")
 				payment_entry.update(payment_entry_dict)
+
+				# Default exchange rate to 1.0 for same-currency transactions
+				company_currency = frappe.get_cached_value("Company", company, "default_currency")
+				if sales_order.currency == company_currency:
+					payment_entry.source_exchange_rate = 1.0
+					payment_entry.target_exchange_rate = 1.0
 				row = payment_entry.append("references")
 				row.reference_doctype = reference_doctype
 				row.reference_name = reference_name
