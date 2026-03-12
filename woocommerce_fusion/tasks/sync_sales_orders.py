@@ -228,41 +228,134 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 		"""
 		Update the ERPNext Sales Order with fields from it's corresponding WooCommerce Order
 		"""
-		# Ignore cancelled Sales Orders
-		if sales_order.docstatus != 2:
-			so_dirty = False
+		# Ignore already-cancelled Sales Orders
+		if sales_order.docstatus == 2:
+			return
 
-			# Update the woocommerce_status field if necessary
-			wc_order_status = WC_ORDER_STATUS_MAPPING_REVERSE[woocommerce_order.status]
-			if sales_order.woocommerce_status != wc_order_status:
-				sales_order.woocommerce_status = wc_order_status
+		# Handle WooCommerce cancellation/refund
+		if woocommerce_order.status in ("cancelled", "refunded"):
+			self.handle_wc_order_cancellation(woocommerce_order, sales_order)
+			return
+
+		so_dirty = False
+
+		# Update the woocommerce_status field if necessary
+		wc_order_status = WC_ORDER_STATUS_MAPPING_REVERSE[woocommerce_order.status]
+		if sales_order.woocommerce_status != wc_order_status:
+			sales_order.woocommerce_status = wc_order_status
+			so_dirty = True
+
+		if sales_order.custom_woocommerce_customer_note != woocommerce_order.customer_note:
+			sales_order.custom_woocommerce_customer_note = woocommerce_order.customer_note
+
+		# Update the payment_method_title field if necessary, use the payment method ID
+		# if the title field is too long
+		payment_method = (
+			woocommerce_order.payment_method_title
+			if len(woocommerce_order.payment_method_title) < 140
+			else woocommerce_order.payment_method
+		)
+		if sales_order.woocommerce_payment_method != payment_method:
+			sales_order.woocommerce_payment_method = payment_method
+			so_dirty = True
+
+		if not sales_order.woocommerce_payment_entry:
+			if self.create_and_link_payment_entry(woocommerce_order, sales_order):
 				so_dirty = True
 
-			if sales_order.custom_woocommerce_customer_note != woocommerce_order.customer_note:
-				sales_order.custom_woocommerce_customer_note = woocommerce_order.customer_note
+		# Update line items from WooCommerce if changed
+		if self.update_sales_order_items(woocommerce_order, sales_order):
+			so_dirty = True
 
-			# Update the payment_method_title field if necessary, use the payment method ID
-			# if the title field is too long
-			payment_method = (
-				woocommerce_order.payment_method_title
-				if len(woocommerce_order.payment_method_title) < 140
-				else woocommerce_order.payment_method
+		if so_dirty:
+			sales_order.flags.created_by_sync = True
+			sales_order.save()
+
+	def handle_wc_order_cancellation(self, woocommerce_order: WooCommerceOrder, sales_order: SalesOrder):
+		"""
+		Handle a cancelled/refunded WooCommerce order by unwinding the ERPNext document chain.
+		Reversal order: SI → DN → SO. Payment Entry is left for finance team to handle manually.
+		"""
+		wc_order_status = WC_ORDER_STATUS_MAPPING_REVERSE[woocommerce_order.status]
+
+		# Draft SO — just cancel directly
+		if sales_order.docstatus == 0:
+			sales_order.woocommerce_status = wc_order_status
+			sales_order.flags.created_by_sync = True
+			sales_order.save()
+			sales_order.flags.created_by_sync = True
+			sales_order.submit()
+			sales_order.flags.created_by_sync = True
+			sales_order.cancel()
+			frappe.log_error(
+				title="WooCommerce Sync: Order Cancelled",
+				message=f"Sales Order {sales_order.name} cancelled (was draft). "
+				f"WooCommerce status: {woocommerce_order.status}",
 			)
-			if sales_order.woocommerce_payment_method != payment_method:
-				sales_order.woocommerce_payment_method = payment_method
-				so_dirty = True
+			return
 
-			if not sales_order.woocommerce_payment_entry:
-				if self.create_and_link_payment_entry(woocommerce_order, sales_order):
-					so_dirty = True
-
-			# Update line items from WooCommerce if changed
-			if self.update_sales_order_items(woocommerce_order, sales_order):
-				so_dirty = True
-
-			if so_dirty:
+		# Submitted SO — unwind children bottom-up
+		# Step 1: Cancel/delete draft Sales Invoices
+		linked_sis = frappe.get_all(
+			"Sales Invoice Item",
+			filters={"sales_order": sales_order.name, "docstatus": ["!=", 2]},
+			fields=["distinct parent as name"],
+		)
+		for si_ref in linked_sis:
+			si = frappe.get_doc("Sales Invoice", si_ref.name)
+			if si.docstatus == 1:
+				frappe.log_error(
+					title="WooCommerce Sync: Cannot Cancel Order",
+					message=f"Cannot cancel Sales Order {sales_order.name}: "
+					f"submitted Sales Invoice {si.name} exists. "
+					f"Finance team must handle this manually.",
+				)
+				# Still update the woocommerce_status so it's visible
+				sales_order.woocommerce_status = wc_order_status
 				sales_order.flags.created_by_sync = True
 				sales_order.save()
+				return
+			elif si.docstatus == 0:
+				si.flags.created_by_sync = True
+				frappe.delete_doc("Sales Invoice", si.name)
+
+		# Step 2: Cancel/delete draft Delivery Notes
+		linked_dns = frappe.get_all(
+			"Delivery Note Item",
+			filters={"against_sales_order": sales_order.name, "docstatus": ["!=", 2]},
+			fields=["distinct parent as name"],
+		)
+		for dn_ref in linked_dns:
+			dn = frappe.get_doc("Delivery Note", dn_ref.name)
+			if dn.docstatus == 1:
+				frappe.log_error(
+					title="WooCommerce Sync: Cannot Cancel Order",
+					message=f"Cannot cancel Sales Order {sales_order.name}: "
+					f"submitted Delivery Note {dn.name} exists. "
+					f"Operations team must handle this manually.",
+				)
+				sales_order.woocommerce_status = wc_order_status
+				sales_order.flags.created_by_sync = True
+				sales_order.save()
+				return
+			elif dn.docstatus == 0:
+				dn.flags.created_by_sync = True
+				frappe.delete_doc("Delivery Note", dn.name)
+
+		# Step 3: Cancel the Sales Order
+		sales_order.reload()
+		sales_order.woocommerce_status = wc_order_status
+		sales_order.flags.created_by_sync = True
+		sales_order.save()
+		sales_order.flags.created_by_sync = True
+		sales_order.cancel()
+
+		frappe.log_error(
+			title="WooCommerce Sync: Order Cancelled",
+			message=f"Sales Order {sales_order.name} cancelled. "
+			f"WooCommerce status: {woocommerce_order.status}. "
+			f"Payment Entry (if any) left for finance team.",
+		)
 
 	def resolve_wc_line_item(self, wc_line_item: dict, wc_server) -> dict:
 		"""
@@ -314,7 +407,8 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 		"""
 		Update Sales Order line items from WooCommerce Order.
 		For draft SOs, items are modified directly.
-		For submitted SOs, uses update_child_qty_rate (works only if no DN/SI exists).
+		For submitted SOs, cancels linked draft Delivery Notes first, updates items
+		via update_child_qty_rate, then recreates the Delivery Note.
 		Returns True if items were changed.
 		"""
 		wc_server = frappe.get_cached_doc("WooCommerce Server", sales_order.woocommerce_server)
@@ -348,15 +442,42 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 		if not items_changed:
 			return False
 
-		# Check if SO has Delivery Notes or Sales Invoices — if so, skip item update
+		# Handle linked Delivery Notes and Sales Invoices for submitted SOs
+		cancelled_draft_dns = []
 		if sales_order.docstatus == 1:
-			if sales_order.per_delivered > 0 or sales_order.per_billed > 0:
+			if sales_order.per_billed > 0:
 				frappe.log_error(
 					"WooCommerce Sync",
 					f"Cannot update items on Sales Order {sales_order.name}: "
-					f"Delivery Note or Sales Invoice already exists.",
+					f"Sales Invoice already exists.",
 				)
 				return False
+
+			if sales_order.per_delivered > 0:
+				# Find linked Delivery Notes
+				linked_dns = frappe.get_all(
+					"Delivery Note Item",
+					filters={"against_sales_order": sales_order.name, "docstatus": ["!=", 2]},
+					fields=["distinct parent as name"],
+				)
+				for dn_ref in linked_dns:
+					dn = frappe.get_doc("Delivery Note", dn_ref.name)
+					if dn.docstatus == 1:
+						# Submitted DN — cannot safely update, stock already moved
+						frappe.log_error(
+							"WooCommerce Sync",
+							f"Cannot update items on Sales Order {sales_order.name}: "
+							f"submitted Delivery Note {dn.name} exists.",
+						)
+						return False
+					elif dn.docstatus == 0:
+						# Draft DN — cancel it so we can update the SO
+						dn.flags.created_by_sync = True
+						frappe.delete_doc("Delivery Note", dn.name)
+						cancelled_draft_dns.append(dn.name)
+
+				# Reload SO after DN deletion to reset per_delivered
+				sales_order.reload()
 
 		if sales_order.docstatus == 0:
 			# Draft SO — replace items directly
@@ -379,17 +500,33 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			from erpnext.controllers.accounts_controller import update_child_qty_rate
 
 			# Build the items list for update_child_qty_rate
+			# Index existing SO items by item_code for matching
+			so_items_by_code = {}
+			for so_item in so_items:
+				so_items_by_code.setdefault(so_item.item_code, []).append(so_item)
+
 			trans_items = []
-			for i, resolved in enumerate(wc_resolved):
+			for resolved in wc_resolved:
 				item_row = {
 					"item_code": resolved["item_code"],
 					"qty": resolved["qty"],
 					"rate": resolved["rate"],
 				}
-				# Map to existing row if possible
-				if i < len(so_items):
-					item_row["docname"] = so_items[i].name
+				# Match to existing row by item_code
+				matched_rows = so_items_by_code.get(resolved["item_code"], [])
+				if matched_rows:
+					item_row["docname"] = matched_rows.pop(0).name
 				trans_items.append(item_row)
+
+			# Mark unmatched existing rows for removal (qty=0)
+			for remaining_rows in so_items_by_code.values():
+				for leftover in remaining_rows:
+					trans_items.append({
+						"docname": leftover.name,
+						"item_code": leftover.item_code,
+						"qty": 0,
+						"rate": leftover.rate,
+					})
 
 			update_child_qty_rate(
 				parent_doctype="Sales Order",
@@ -397,6 +534,12 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				parent_doctype_name=sales_order.name,
 			)
 			sales_order.reload()
+
+			# Recreate Delivery Note if we cancelled draft DNs and auto-create is enabled
+			if cancelled_draft_dns and wc_server.auto_create_delivery_note:
+				self.create_delivery_note(sales_order)
+				sales_order.reload()
+
 			return True
 
 		return False
