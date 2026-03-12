@@ -6,7 +6,7 @@ from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.selling.doctype.sales_order_item.sales_order_item import SalesOrderItem
 from frappe import _
 from frappe.utils import get_datetime
-from frappe.utils.data import cstr, now
+from frappe.utils.data import cstr, flt, now
 from jsonpath_ng.ext import parse
 
 from woocommerce_fusion.exceptions import SyncDisabledError, WooCommerceOrderNotFoundError
@@ -639,11 +639,21 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				if sales_order.currency == company_currency:
 					payment_entry.source_exchange_rate = 1.0
 					payment_entry.target_exchange_rate = 1.0
+				# Get the actual outstanding amount on the reference document
+				if reference_doctype == "Sales Invoice":
+					outstanding_amount = flt(frappe.db.get_value("Sales Invoice", reference_name, "outstanding_amount"))
+				else:
+					# For Sales Orders, outstanding = grand_total - advance_paid
+					advance_paid = flt(frappe.db.get_value("Sales Order", reference_name, "advance_paid"))
+					outstanding_amount = flt(total_amount) - advance_paid
+
+				allocated_amount = min(flt(wc_order.total), outstanding_amount) if outstanding_amount > 0 else flt(wc_order.total)
+
 				row = payment_entry.append("references")
 				row.reference_doctype = reference_doctype
 				row.reference_name = reference_name
 				row.total_amount = total_amount
-				row.allocated_amount = min(float(total_amount), float(wc_order.total))
+				row.allocated_amount = allocated_amount
 				payment_entry.save()
 
 				# Link created Payment Entry to Sales Order
