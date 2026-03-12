@@ -458,30 +458,29 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				)
 				return False
 
-			if sales_order.per_delivered > 0:
-				# Find linked Delivery Notes
-				linked_dns = frappe.get_all(
-					"Delivery Note Item",
-					filters={"against_sales_order": sales_order.name, "docstatus": ["!=", 2]},
-					fields=["distinct parent as name"],
-				)
-				for dn_ref in linked_dns:
-					dn = frappe.get_doc("Delivery Note", dn_ref.name)
-					if dn.docstatus == 1:
-						# Submitted DN — cannot safely update, stock already moved
-						frappe.log_error(
-							"WooCommerce Sync",
-							f"Cannot update items on Sales Order {sales_order.name}: "
-							f"submitted Delivery Note {dn.name} exists.",
-						)
-						return False
-					elif dn.docstatus == 0:
-						# Draft DN — cancel it so we can update the SO
-						dn.flags.created_by_sync = True
-						frappe.delete_doc("Delivery Note", dn.name)
-						cancelled_draft_dns.append(dn.name)
+			# Find all linked Delivery Notes (draft DNs don't update per_delivered)
+			linked_dns = frappe.get_all(
+				"Delivery Note Item",
+				filters={"against_sales_order": sales_order.name, "docstatus": ["!=", 2]},
+				fields=["distinct parent as name"],
+			)
+			for dn_ref in linked_dns:
+				dn = frappe.get_doc("Delivery Note", dn_ref.name)
+				if dn.docstatus == 1:
+					# Submitted DN — cannot safely update, stock already moved
+					frappe.log_error(
+						"WooCommerce Sync",
+						f"Cannot update items on Sales Order {sales_order.name}: "
+						f"submitted Delivery Note {dn.name} exists.",
+					)
+					return False
+				elif dn.docstatus == 0:
+					# Draft DN — delete it so we can update the SO, will recreate after
+					dn.flags.created_by_sync = True
+					frappe.delete_doc("Delivery Note", dn.name)
+					cancelled_draft_dns.append(dn.name)
 
-				# Reload SO after DN deletion to reset per_delivered
+			if cancelled_draft_dns:
 				sales_order.reload()
 
 		if sales_order.docstatus == 0:
@@ -555,8 +554,8 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			)
 			sales_order.reload()
 
-			# Recreate Delivery Note if we cancelled draft DNs and auto-create is enabled
-			if cancelled_draft_dns and wc_server.auto_create_delivery_note:
+			# Recreate Delivery Note if we deleted draft DNs before the update
+			if cancelled_draft_dns:
 				self.create_delivery_note(sales_order)
 				sales_order.reload()
 
