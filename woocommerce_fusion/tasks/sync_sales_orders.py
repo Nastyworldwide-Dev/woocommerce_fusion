@@ -953,12 +953,13 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 
 		try:
 			customer.save()
+			frappe.db.commit()
 		except Exception:
 			error_message = f"{frappe.get_traceback()}\n\nCustomer Data{customer.as_dict()}"
 			frappe.log_error("WooCommerce Error", error_message)
-		finally:
-			self.customer = customer
+			raise
 
+		self.customer = customer
 		self.create_or_update_address(wc_order)
 
 		contact = find_existing_contact(email, raw_billing_data.get("phone"))
