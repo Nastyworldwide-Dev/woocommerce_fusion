@@ -518,15 +518,9 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 					item_row["docname"] = matched_rows.pop(0).name
 				trans_items.append(item_row)
 
-			# Mark unmatched existing rows for removal (qty=0)
-			for remaining_rows in so_items_by_code.values():
-				for leftover in remaining_rows:
-					trans_items.append({
-						"docname": leftover.name,
-						"item_code": leftover.item_code,
-						"qty": 0,
-						"rate": leftover.rate,
-					})
+			# Note: unmatched existing rows are intentionally excluded from trans_items.
+			# update_child_qty_rate's validate_and_delete_children will automatically
+			# remove SO items whose docname is not present in the update payload.
 
 			update_child_qty_rate(
 				parent_doctype="Sales Order",
