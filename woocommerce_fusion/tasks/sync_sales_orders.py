@@ -643,7 +643,7 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				row.reference_doctype = reference_doctype
 				row.reference_name = reference_name
 				row.total_amount = total_amount
-				row.allocated_amount = total_amount
+				row.allocated_amount = min(float(total_amount), float(wc_order.total))
 				payment_entry.save()
 
 				# Link created Payment Entry to Sales Order
