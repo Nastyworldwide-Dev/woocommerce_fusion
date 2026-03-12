@@ -422,15 +422,20 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			if resolved:
 				wc_resolved.append(resolved)
 
-		# Compare with existing SO items
+		# Separate SO items into WooCommerce-synced items and ERP-only items (e.g. thank you cards)
+		wc_item_codes = {r["item_code"] for r in wc_resolved}
 		so_items = sales_order.items
+		so_wc_items = [item for item in so_items if item.item_code in wc_item_codes]
+		so_erp_only_items = [item for item in so_items if item.item_code not in wc_item_codes]
+
+		# Compare only WooCommerce-synced items
 		items_changed = False
 
-		if len(wc_resolved) != len(so_items):
+		if len(wc_resolved) != len(so_wc_items):
 			items_changed = True
 		else:
 			for i, resolved in enumerate(wc_resolved):
-				so_item = so_items[i]
+				so_item = so_wc_items[i]
 				if (
 					so_item.item_code != resolved["item_code"]
 					or so_item.qty != resolved["qty"]
@@ -480,7 +485,7 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				sales_order.reload()
 
 		if sales_order.docstatus == 0:
-			# Draft SO — replace items directly
+			# Draft SO — replace WC items, preserve ERP-only items (e.g. thank you cards)
 			sales_order.items = []
 			for resolved in wc_resolved:
 				sales_order.append("items", {
@@ -493,6 +498,18 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 					"warehouse": wc_server.warehouse,
 					"discount_percentage": resolved["discount_percentage"],
 				})
+			# Re-add ERP-only items
+			for erp_item in so_erp_only_items:
+				sales_order.append("items", {
+					"item_code": erp_item.item_code,
+					"item_name": erp_item.item_name,
+					"description": erp_item.description,
+					"delivery_date": erp_item.delivery_date,
+					"qty": erp_item.qty,
+					"rate": erp_item.rate,
+					"warehouse": erp_item.warehouse,
+					"cost_center": erp_item.cost_center,
+				})
 			return True
 
 		elif sales_order.docstatus == 1:
@@ -500,9 +517,9 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			from erpnext.controllers.accounts_controller import update_child_qty_rate
 
 			# Build the items list for update_child_qty_rate
-			# Index existing SO items by item_code for matching
+			# Index existing WC-synced SO items by item_code for matching
 			so_items_by_code = {}
-			for so_item in so_items:
+			for so_item in so_wc_items:
 				so_items_by_code.setdefault(so_item.item_code, []).append(so_item)
 
 			trans_items = []
@@ -518,7 +535,16 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 					item_row["docname"] = matched_rows.pop(0).name
 				trans_items.append(item_row)
 
-			# Note: unmatched existing rows are intentionally excluded from trans_items.
+			# Preserve ERP-only items (e.g. thank you cards) by including their docnames
+			for erp_item in so_erp_only_items:
+				trans_items.append({
+					"docname": erp_item.name,
+					"item_code": erp_item.item_code,
+					"qty": erp_item.qty,
+					"rate": erp_item.rate,
+				})
+
+			# Note: unmatched WC rows are intentionally excluded from trans_items.
 			# update_child_qty_rate's validate_and_delete_children will automatically
 			# remove SO items whose docname is not present in the update payload.
 
