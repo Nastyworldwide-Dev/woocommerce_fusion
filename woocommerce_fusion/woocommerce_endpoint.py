@@ -37,10 +37,10 @@ def validate_request() -> tuple[bool, HTTPStatus | None, str | None]:
 	return True, None, None
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep
-def order_created(*args, **kwargs):
+def _process_order_webhook():
 	"""
-	Accepts payload data from WooCommerce "Order Created" webhook
+	Common handler for order created/updated webhooks.
+	Parses the payload and enqueues a sync job.
 	"""
 	valid, status, msg = validate_request()
 	if not valid:
@@ -51,12 +51,12 @@ def order_created(*args, **kwargs):
 			order = json.loads(frappe.request.data)
 		except ValueError:
 			# woocommerce returns 'webhook_id=value' for the first request which is not JSON
-			order = frappe.request.data
+			return Response(status=HTTPStatus.OK)
 		event = frappe.get_request_header("x-wc-webhook-event")
 	else:
 		return Response(response=_("Missing Header"), status=HTTPStatus.BAD_REQUEST)
 
-	if event == "created":
+	if event in ("created", "updated"):
 		webhook_source_url = frappe.get_request_header("x-wc-webhook-source", "")
 		woocommerce_order_name = (
 			f"{parse_domain_from_url(webhook_source_url)}{WC_RESOURCE_DELIMITER}{order['id']}"
@@ -65,3 +65,20 @@ def order_created(*args, **kwargs):
 		return Response(status=HTTPStatus.OK)
 	else:
 		return Response(response=_("Event not supported"), status=HTTPStatus.BAD_REQUEST)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep
+def order_created(*args, **kwargs):
+	"""
+	Accepts payload data from WooCommerce "Order Created" webhook.
+	Also handles "Order Updated" events for backward compatibility.
+	"""
+	return _process_order_webhook()
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep
+def order_updated(*args, **kwargs):
+	"""
+	Accepts payload data from WooCommerce "Order Updated" webhook.
+	"""
+	return _process_order_webhook()

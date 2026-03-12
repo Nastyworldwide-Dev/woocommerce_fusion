@@ -422,11 +422,21 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			if resolved:
 				wc_resolved.append(resolved)
 
-		# Separate SO items into WooCommerce-synced items and ERP-only items (e.g. thank you cards)
-		wc_item_codes = {r["item_code"] for r in wc_resolved}
+		# Separate SO items into WooCommerce-synced items and ERP-only items (e.g. thank you cards).
+		# An item is WC-synced if it has a mapping in Item WooCommerce Server for this WC server.
+		# Items removed from the WC order must NOT be misclassified as ERP-only.
+		iws = frappe.qb.DocType("Item WooCommerce Server")
+		wc_mapped_items = set(
+			row.parent for row in
+			frappe.qb.from_(iws)
+			.where(iws.woocommerce_server == wc_server.name)
+			.select(iws.parent)
+			.run(as_dict=True)
+		)
+
 		so_items = sales_order.items
-		so_wc_items = [item for item in so_items if item.item_code in wc_item_codes]
-		so_erp_only_items = [item for item in so_items if item.item_code not in wc_item_codes]
+		so_erp_only_items = [item for item in so_items if item.item_code not in wc_mapped_items]
+		so_wc_items = [item for item in so_items if item.item_code in wc_mapped_items]
 
 		# Compare only WooCommerce-synced items
 		items_changed = False

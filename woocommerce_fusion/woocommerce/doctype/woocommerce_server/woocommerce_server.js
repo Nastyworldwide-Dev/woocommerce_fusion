@@ -138,26 +138,60 @@ frappe.ui.form.on("WooCommerce Server", {
       title: __("WooCommerce Webhook Settings"),
       fields: [
         {
+          label: __("Webhook 1: Order Created"),
+          fieldtype: "Section Break",
+        },
+        {
           label: __("Status"),
-          fieldname: "status",
+          fieldname: "status_created",
           fieldtype: "Data",
           default: "Active",
           read_only: 1,
         },
         {
           label: __("Topic"),
-          fieldname: "topic",
+          fieldname: "topic_created",
           fieldtype: "Data",
           default: "Order created",
           read_only: 1,
         },
         {
           label: __("Delivery URL"),
-          fieldname: "url",
+          fieldname: "url_created",
           fieldtype: "Data",
           default:
             "<site url here>/api/method/woocommerce_fusion.woocommerce_endpoint.order_created",
           read_only: 1,
+        },
+        {
+          label: __("Webhook 2: Order Updated"),
+          fieldtype: "Section Break",
+        },
+        {
+          label: __("Status"),
+          fieldname: "status_updated",
+          fieldtype: "Data",
+          default: "Active",
+          read_only: 1,
+        },
+        {
+          label: __("Topic"),
+          fieldname: "topic_updated",
+          fieldtype: "Data",
+          default: "Order updated",
+          read_only: 1,
+        },
+        {
+          label: __("Delivery URL"),
+          fieldname: "url_updated",
+          fieldtype: "Data",
+          default:
+            "<site url here>/api/method/woocommerce_fusion.woocommerce_endpoint.order_updated",
+          read_only: 1,
+        },
+        {
+          label: __("Common Settings"),
+          fieldtype: "Section Break",
         },
         {
           label: __("Secret"),
