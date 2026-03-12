@@ -6,7 +6,7 @@ from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.selling.doctype.sales_order_item.sales_order_item import SalesOrderItem
 from frappe import _
 from frappe.utils import get_datetime
-from frappe.utils.data import cstr, flt, now
+from frappe.utils.data import cstr, now
 from jsonpath_ng.ext import parse
 
 from woocommerce_fusion.exceptions import SyncDisabledError, WooCommerceOrderNotFoundError
@@ -579,8 +579,6 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 				payment_method_gl_account_mapping = json.loads(wc_server.payment_method_gl_account_mapping)
 				company_gl_account = payment_method_gl_account_mapping[wc_order.payment_method]
 
-				# Create a new Payment Entry
-				company = frappe.get_value("Account", company_gl_account, "company")
 				meta_data = wc_order.get("meta_data", None)
 
 				# Attempt to get Payfast Transaction ID
@@ -597,10 +595,9 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 						else None
 					)
 
-				# Determine if the reference should be Sales Order or Sales Invoice
+				# Determine reference document: prefer Sales Invoice if billed
 				reference_doctype = "Sales Order"
 				reference_name = sales_order.name
-				total_amount = sales_order.grand_total
 				if sales_order.per_billed > 0:
 					si_item_details = frappe.get_all(
 						"Sales Invoice Item",
@@ -610,50 +607,28 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 					if len(si_item_details) > 0:
 						reference_doctype = "Sales Invoice"
 						reference_name = si_item_details[0].parent
-						total_amount = sales_order.grand_total
 
 				# Strip time component from date_paid for exchange rate lookups
 				posting_date = (wc_order.date_paid or sales_order.transaction_date)
 				if posting_date and "T" in str(posting_date):
 					posting_date = str(posting_date).split("T")[0]
 
-				# Create Payment Entry
-				payment_entry_dict = {
-					"company": company,
-					"payment_type": "Receive",
-					"reference_no": payment_reference_no or wc_order.payment_method_title,
-					"reference_date": posting_date,
-					"party_type": "Customer",
-					"party": sales_order.customer,
-					"posting_date": posting_date,
-					"paid_amount": float(wc_order.total),
-					"received_amount": float(wc_order.total),
-					"bank_account": company_bank_account,
-					"paid_to": company_gl_account,
-				}
-				payment_entry = frappe.new_doc("Payment Entry")
-				payment_entry.update(payment_entry_dict)
+				# Use ERPNext's get_payment_entry to build PE with correct outstanding/allocated amounts
+				from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 
-				# Default exchange rate to 1.0 for same-currency transactions
-				company_currency = frappe.get_cached_value("Company", company, "default_currency")
-				if sales_order.currency == company_currency:
-					payment_entry.source_exchange_rate = 1.0
-					payment_entry.target_exchange_rate = 1.0
-				# Get the actual outstanding amount on the reference document
-				if reference_doctype == "Sales Invoice":
-					outstanding_amount = flt(frappe.db.get_value("Sales Invoice", reference_name, "outstanding_amount"))
-				else:
-					# For Sales Orders, outstanding = grand_total - advance_paid
-					advance_paid = flt(frappe.db.get_value("Sales Order", reference_name, "advance_paid"))
-					outstanding_amount = flt(total_amount) - advance_paid
+				payment_entry = get_payment_entry(
+					reference_doctype,
+					reference_name,
+					bank_account=company_bank_account,
+					reference_date=posting_date,
+				)
 
-				allocated_amount = min(flt(wc_order.total), outstanding_amount) if outstanding_amount > 0 else flt(wc_order.total)
-
-				row = payment_entry.append("references")
-				row.reference_doctype = reference_doctype
-				row.reference_name = reference_name
-				row.total_amount = total_amount
-				row.allocated_amount = allocated_amount
+				# Override with WooCommerce-specific values
+				payment_entry.posting_date = posting_date
+				payment_entry.reference_no = payment_reference_no or wc_order.payment_method_title
+				payment_entry.reference_date = posting_date
+				payment_entry.paid_to = company_gl_account
+				payment_entry.bank_account = company_bank_account
 				payment_entry.save()
 
 				# Link created Payment Entry to Sales Order
